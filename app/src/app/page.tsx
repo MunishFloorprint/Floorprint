@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import Link from 'next/link'
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -221,7 +222,7 @@ export default async function Home() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               {data.buildings.map(b => {
                 const stats = computeBuildingStats(b, data)
-                return <BuildingCard key={b.id} building={b} stats={stats} />
+                return (<Link key={b.id} href={`/buildings/${b.id}`} style={{ textDecoration: 'none', color: 'inherit' }}><BuildingCard building={b} stats={stats} /></Link>)
               })}
             </div>
           </div>
