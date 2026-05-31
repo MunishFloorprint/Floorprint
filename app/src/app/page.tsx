@@ -21,32 +21,24 @@ type ActivityEvent = {
   highlighted: boolean
 }
 
-// ─────────────────────────────────────────────────────────────
-// Data loader (runs server-side, on each page request)
-// ─────────────────────────────────────────────────────────────
 async function loadDashboardData() {
-  // All matches with their carbon entries — used for hero KPIs
   const { data: matches } = await supabase
     .from('matches')
     .select('id, value_eur, carbon_avoided_kg, status, matched_at, destination_tenancy_id, component_id')
 
-  // All components — used to count active intercepts
   const { data: components } = await supabase
     .from('components')
     .select('id, tenancy_id, lifecycle_state, embodied_carbon_kg')
 
-  // All tenancies — used to enrich activity feed
   const { data: tenancies } = await supabase
     .from('tenancies')
     .select('id, floor_id, tenant_name, status')
 
-  // All buildings
   const { data: buildings } = await supabase
     .from('buildings')
     .select('id, address, district, floors_count, total_sqm, occupancy_pct')
     .order('address')
 
-  // All floors — used to figure out which building each tenancy lives in
   const { data: floors } = await supabase
     .from('floors')
     .select('id, building_id, floor_number, floor_label, sqm, status')
@@ -60,21 +52,15 @@ async function loadDashboardData() {
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-// Compute KPIs from raw data
-// ─────────────────────────────────────────────────────────────
 function computeKPIs(data: Awaited<ReturnType<typeof loadDashboardData>>) {
   const totalCarbonKg = data.matches.reduce((s, m) => s + Number(m.carbon_avoided_kg || 0), 0)
   const totalValueEur = data.matches.reduce((s, m) => s + Number(m.value_eur || 0), 0)
   const tonnesDiverted = Math.round(totalCarbonKg / 1000 * 100) / 100
 
-  // Active intercepts = unique floors currently in disassembly
   const disassemblyFloorIds = new Set(
     data.floors.filter(f => f.status === 'disassembly').map(f => f.id)
   )
 
-  // Inventory value still in matching = sum of (carbon × indicative €/kg) across in_matching components
-  // Simplified: count components in_matching, estimate value as €2k per item (placeholder for prototype)
   const inMatching = data.components.filter(c => c.lifecycle_state === 'in_matching').length
 
   return {
@@ -86,9 +72,6 @@ function computeKPIs(data: Awaited<ReturnType<typeof loadDashboardData>>) {
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-// Compute per-building stats
-// ─────────────────────────────────────────────────────────────
 function computeBuildingStats(
   building: Building,
   data: Awaited<ReturnType<typeof loadDashboardData>>
@@ -101,10 +84,8 @@ function computeBuildingStats(
     data.tenancies.filter(t => buildingFloorIds.has(t.floor_id)).map(t => t.id)
   )
 
-  // Components from this building
   const buildingComponents = data.components.filter(c => buildingTenancyIds.has(c.tenancy_id))
 
-  // Matches whose component originates in this building
   const buildingMatches = data.matches.filter(m => {
     const comp = data.components.find(c => c.id === m.component_id)
     return comp && buildingTenancyIds.has(comp.tenancy_id)
@@ -113,18 +94,15 @@ function computeBuildingStats(
   const carbonKg = buildingMatches.reduce((s, m) => s + Number(m.carbon_avoided_kg || 0), 0)
   const diverted = Math.round(carbonKg / 1000 * 10) / 10
 
-  // Active intercepts on this building
   const activeFloors = data.floors.filter(
     f => f.building_id === building.id && f.status === 'disassembly'
   ).length
 
-  // Upcoming lease ends — floors with status 'leasing_soon' or 'disassembly'
   const upcomingFloors = data.floors.filter(
     f => f.building_id === building.id && (f.status === 'leasing_soon' || f.status === 'disassembly')
   )
   const upcomingSqm = upcomingFloors.reduce((s, f) => s + Number(f.sqm || 0), 0)
 
-  // Components currently in matching
   const inMatching = buildingComponents.filter(c => c.lifecycle_state === 'in_matching').length
 
   return {
@@ -137,13 +115,9 @@ function computeBuildingStats(
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-// Recent activity feed (computed from match + component data)
-// ─────────────────────────────────────────────────────────────
 function buildActivityFeed(data: Awaited<ReturnType<typeof loadDashboardData>>): ActivityEvent[] {
   const events: ActivityEvent[] = []
 
-  // Group matches by destination tenancy → activity event
   const matchesByDest = new Map<string, typeof data.matches>()
   for (const m of data.matches) {
     if (!matchesByDest.has(m.destination_tenancy_id)) matchesByDest.set(m.destination_tenancy_id, [])
@@ -165,19 +139,12 @@ function buildActivityFeed(data: Awaited<ReturnType<typeof loadDashboardData>>):
     })
   }
 
-  // Sort by ts desc, take top 5
   events.sort((a, b) => (b.ts || '').localeCompare(a.ts || ''))
   return events.slice(0, 5)
 }
 
-// ─────────────────────────────────────────────────────────────
-// Tiny presentational helpers
-// ─────────────────────────────────────────────────────────────
 const fmt = (n: number) => n.toLocaleString('de-DE')
 
-// ─────────────────────────────────────────────────────────────
-// Page
-// ─────────────────────────────────────────────────────────────
 export default async function Home() {
   const data = await loadDashboardData()
   const kpi = computeKPIs(data)
@@ -185,7 +152,6 @@ export default async function Home() {
 
   return (
     <main style={{ background: '#fff', minHeight: '100vh', color: '#0A0A0A', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
-      {/* Top bar */}
       <header style={{ borderBottom: '1px solid #E8E8E8', padding: '0.75rem 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '0' }}>
           <span style={{ fontSize: '17px', fontWeight: 700, letterSpacing: '-0.01em' }}>floorprint</span>
@@ -196,7 +162,6 @@ export default async function Home() {
 
       <div style={{ maxWidth: 1400, margin: '0 auto', padding: '2rem 1.5rem' }}>
 
-        {/* Page header */}
         <div style={{ marginBottom: '2rem' }}>
           <p style={{ fontSize: 11, color: '#6B6B6B', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, marginBottom: '0.5rem' }}>Portfolio overview</p>
           <h1 style={{ fontSize: 28, fontWeight: 700, letterSpacing: '-0.01em', margin: 0 }}>Berlin office portfolio · YTD 2026</h1>
@@ -205,7 +170,6 @@ export default async function Home() {
           </p>
         </div>
 
-        {/* Hero KPI row */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.75rem', marginBottom: '2rem' }}>
           <KpiCard label="Material diverted" value={`${kpi.tonnesDiverted}`} unit="t" tag="LIVE" />
           <KpiCard label="Scope 3 avoided" value={fmt(kpi.tonnesCo2e)} unit="kgCO₂e" tag="CSRD READY" />
@@ -213,21 +177,34 @@ export default async function Home() {
           <KpiCard label="Components in matching" value={`${kpi.inMatching}`} unit="items" />
         </div>
 
-        {/* Two-column: buildings + activity */}
+        {/* Quick-action shortcuts */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: '2rem' }}>
+          <Link href="/matching" style={{ display: 'block', padding: '14px 18px', background: '#fff', border: '1px solid #E8E8E8', borderRadius: 10, textDecoration: 'none', color: 'inherit' }}>
+            <p style={{ fontSize: 10, color: '#C9531C', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700, margin: 0 }}>Matching engine</p>
+            <p style={{ fontSize: 14, fontWeight: 600, margin: '4px 0 0 0' }}>Find components for an incoming brief →</p>
+          </Link>
+          <Link href="/reports/csrd" style={{ display: 'block', padding: '14px 18px', background: '#fff', border: '1px solid #E8E8E8', borderRadius: 10, textDecoration: 'none', color: 'inherit' }}>
+            <p style={{ fontSize: 10, color: '#C9531C', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700, margin: 0 }}>CSRD report</p>
+            <p style={{ fontSize: 14, fontWeight: 600, margin: '4px 0 0 0' }}>Open Q3 disclosure draft →</p>
+          </Link>
+        </div>
+
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1.5rem' }}>
 
-          {/* Buildings */}
           <div>
             <h2 style={{ fontSize: 14, fontWeight: 600, margin: '0 0 1rem 0' }}>Buildings</h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               {data.buildings.map(b => {
                 const stats = computeBuildingStats(b, data)
-                return (<Link key={b.id} href={`/buildings/${b.id}`} style={{ textDecoration: 'none', color: 'inherit' }}><BuildingCard building={b} stats={stats} /></Link>)
+                return (
+                  <Link key={b.id} href={`/buildings/${b.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+                    <BuildingCard building={b} stats={stats} />
+                  </Link>
+                )
               })}
             </div>
           </div>
 
-          {/* Right column: CSRD panel + activity */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             <div style={{ background: '#0A0A0A', color: '#fff', padding: '1.25rem', borderRadius: 12 }}>
               <p style={{ fontSize: 10, color: '#C9531C', fontWeight: 700, letterSpacing: '0.08em', margin: 0, marginBottom: 12 }}>CSRD · ESRS E1</p>
@@ -235,7 +212,9 @@ export default async function Home() {
               <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', lineHeight: 1.5, margin: 0, marginBottom: 16 }}>
                 {fmt(kpi.tonnesCo2e)} kgCO₂e Scope 3 reduction documented per EN 15978. Awaiting EY review.
               </p>
-              <button style={{ width: '100%', background: '#fff', color: '#0A0A0A', fontSize: 12, fontWeight: 600, padding: '0.5rem', border: 0, borderRadius: 6, cursor: 'pointer' }}>Open draft report →</button>
+              <Link href="/reports/csrd" style={{ display: 'block', width: '100%', background: '#fff', color: '#0A0A0A', fontSize: 12, fontWeight: 600, padding: '0.5rem', borderRadius: 6, textAlign: 'center', textDecoration: 'none' }}>
+                Open draft report →
+              </Link>
             </div>
 
             <div>
@@ -247,9 +226,8 @@ export default async function Home() {
           </div>
         </div>
 
-        {/* Footer */}
         <div style={{ marginTop: '3rem', paddingTop: '1.5rem', borderTop: '1px solid #E8E8E8', display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#9CA0A8' }}>
-          <span>Floorprint · Live data · v0.2</span>
+          <span>Floorprint · Live data · v0.6</span>
           <span>EN 15978 · ESRS E1 · DIN SPEC 91484</span>
         </div>
       </div>
@@ -257,9 +235,6 @@ export default async function Home() {
   )
 }
 
-// ─────────────────────────────────────────────────────────────
-// Small components
-// ─────────────────────────────────────────────────────────────
 function KpiCard({ label, value, unit, tag }: { label: string; value: string; unit: string; tag?: string }) {
   return (
     <div style={{ background: '#fff', border: '1px solid #E8E8E8', borderRadius: 12, padding: '1.25rem' }}>
