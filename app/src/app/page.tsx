@@ -1,9 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 
-// ─────────────────────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────────────────────
 type Building = {
   id: string
   address: string
@@ -143,6 +140,29 @@ function buildActivityFeed(data: Awaited<ReturnType<typeof loadDashboardData>>):
   return events.slice(0, 5)
 }
 
+// ─────────────────────────────────────────────────────────────
+// Format a timestamp as a relative human string (e.g. "2 days ago")
+// ─────────────────────────────────────────────────────────────
+function relativeTime(ts: string): string {
+  if (!ts) return ''
+  const then = new Date(ts).getTime()
+  const now = Date.now()
+  const diffSec = Math.max(0, Math.round((now - then) / 1000))
+  if (diffSec < 60) return 'just now'
+  const diffMin = Math.round(diffSec / 60)
+  if (diffMin < 60) return `${diffMin} minute${diffMin === 1 ? '' : 's'} ago`
+  const diffHr = Math.round(diffMin / 60)
+  if (diffHr < 24) return `${diffHr} hour${diffHr === 1 ? '' : 's'} ago`
+  const diffDay = Math.round(diffHr / 24)
+  if (diffDay === 1) return 'yesterday'
+  if (diffDay < 7) return `${diffDay} days ago`
+  const diffWeek = Math.round(diffDay / 7)
+  if (diffWeek < 5) return `${diffWeek} week${diffWeek === 1 ? '' : 's'} ago`
+  const diffMonth = Math.round(diffDay / 30)
+  if (diffMonth < 12) return `${diffMonth} month${diffMonth === 1 ? '' : 's'} ago`
+  return 'over a year ago'
+}
+
 const fmt = (n: number) => n.toLocaleString('de-DE')
 
 export default async function Home() {
@@ -177,7 +197,6 @@ export default async function Home() {
           <KpiCard label="Components in matching" value={`${kpi.inMatching}`} unit="items" />
         </div>
 
-        {/* Quick-action shortcuts */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: '2rem' }}>
           <Link href="/matching" style={{ display: 'block', padding: '14px 18px', background: '#fff', border: '1px solid #E8E8E8', borderRadius: 10, textDecoration: 'none', color: 'inherit' }}>
             <p style={{ fontSize: 10, color: '#C9531C', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700, margin: 0 }}>Matching engine</p>
@@ -227,7 +246,7 @@ export default async function Home() {
         </div>
 
         <div style={{ marginTop: '3rem', paddingTop: '1.5rem', borderTop: '1px solid #E8E8E8', display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#9CA0A8' }}>
-          <span>Floorprint · Live data · v0.6</span>
+          <span>Floorprint · Live data · v0.8</span>
           <span>EN 15978 · ESRS E1 · DIN SPEC 91484</span>
         </div>
       </div>
@@ -297,7 +316,7 @@ function ActivityRow({ event }: { event: ActivityEvent }) {
     <div style={{ display: 'flex', gap: 12 }}>
       <div style={{ width: 8, height: 8, background: '#C9531C', borderRadius: '50%', marginTop: 6, flexShrink: 0 }} />
       <div style={{ flex: 1 }}>
-        <p style={{ fontSize: 11, color: '#6B6B6B', margin: 0 }}>recent</p>
+        <p style={{ fontSize: 11, color: '#6B6B6B', margin: 0 }}>{relativeTime(event.ts)}</p>
         <p style={{ fontSize: 13, lineHeight: 1.4, margin: '2px 0 0 0' }}>
           <span style={{ fontWeight: 600 }}>{event.title}</span>
         </p>

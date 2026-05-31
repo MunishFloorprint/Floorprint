@@ -2,9 +2,6 @@ import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
-// ─────────────────────────────────────────────────────────────
-// Data loader for one building
-// ─────────────────────────────────────────────────────────────
 async function loadBuildingData(buildingId: string) {
   const { data: building } = await supabase
     .from('buildings')
@@ -52,9 +49,6 @@ async function loadBuildingData(buildingId: string) {
 
 const fmt = (n: number) => n.toLocaleString('de-DE')
 
-// ─────────────────────────────────────────────────────────────
-// Floor row in the cross-section
-// ─────────────────────────────────────────────────────────────
 function getFloorStyle(status: string) {
   switch (status) {
     case 'disassembly':
@@ -81,9 +75,6 @@ const STATUS_LABEL: Record<string, string> = {
   leased: 'Leased',
 }
 
-// ─────────────────────────────────────────────────────────────
-// Page
-// ─────────────────────────────────────────────────────────────
 export default async function BuildingPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const data = await loadBuildingData(id)
@@ -91,50 +82,41 @@ export default async function BuildingPage({ params }: { params: Promise<{ id: s
 
   const { building, floors, tenancies, components, matches } = data
 
-  // Find the active intervention floor (disassembly)
   const activeFloor = floors.find(f => f.status === 'disassembly')
   const activeTenancy = activeFloor ? tenancies.find(t => t.floor_id === activeFloor.id && t.status === 'vacating') : null
   const activeFloorComponents = activeTenancy ? components.filter(c => c.tenancy_id === activeTenancy.id) : []
 
-  // In-building matches: source tenancy is in this building, destination tenancy is also in this building
   const buildingTenancyIds = new Set(tenancies.map(t => t.id))
   const inBuildingMatches = matches.filter(m => {
     const comp = components.find(c => c.id === m.component_id)
     return comp && buildingTenancyIds.has(comp.tenancy_id) && buildingTenancyIds.has(m.destination_tenancy_id)
   })
 
-  // Match cluster from the active floor (the magic moment)
   const activeFloorMatches = activeFloorComponents.length > 0
     ? matches.filter(m => activeFloorComponents.some(c => c.id === m.component_id))
     : []
 
-  // Where are those active-floor components going?
   const destinationTenancyId = activeFloorMatches[0]?.destination_tenancy_id
   const destinationTenancy = destinationTenancyId ? tenancies.find(t => t.id === destinationTenancyId) : null
   const destinationFloor = destinationTenancy ? floors.find(f => f.id === destinationTenancy.floor_id) : null
 
-  // Total value retained on this floor's magic moment
   const magicValue = activeFloorMatches.reduce((s, m) => s + Number(m.value_eur || 0), 0)
   const magicCarbon = activeFloorMatches.reduce((s, m) => s + Number(m.carbon_avoided_kg || 0), 0)
 
-  // Component breakdown by category
   const byCategory: Record<string, number> = {}
   for (const c of activeFloorComponents) {
     byCategory[c.category] = (byCategory[c.category] || 0) + 1
   }
 
-  // Grades
   const gradeA = activeFloorComponents.filter(c => c.condition_grade === 'A').length
   const gradeB = activeFloorComponents.filter(c => c.condition_grade === 'B').length
   const gradeC = activeFloorComponents.filter(c => c.condition_grade === 'C').length
 
-  // YTD tonnes diverted for this building
   const ytdTonnes = Math.round(matches.reduce((s, m) => s + Number(m.carbon_avoided_kg || 0), 0) / 1000 * 10) / 10
   const ytdCo2e = Math.round(matches.reduce((s, m) => s + Number(m.carbon_avoided_kg || 0), 0))
 
   return (
     <main style={{ background: '#fff', minHeight: '100vh', color: '#0A0A0A', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
-      {/* Top bar */}
       <header style={{ borderBottom: '1px solid #E8E8E8', padding: '0.75rem 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Link href="/" style={{ display: 'flex', alignItems: 'baseline', textDecoration: 'none', color: 'inherit' }}>
           <span style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.01em' }}>floorprint</span>
@@ -145,10 +127,8 @@ export default async function BuildingPage({ params }: { params: Promise<{ id: s
 
       <div style={{ maxWidth: 1400, margin: '0 auto', padding: '2rem 1.5rem' }}>
 
-        {/* Breadcrumb */}
         <Link href="/" style={{ fontSize: 12, color: '#6B6B6B', textDecoration: 'none', marginBottom: 12, display: 'inline-block' }}>← Berlin office portfolio</Link>
 
-        {/* Page header */}
         <div style={{ marginBottom: '2rem' }}>
           <p style={{ fontSize: 11, color: '#6B6B6B', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, marginBottom: '0.5rem' }}>{building.district}</p>
           <h1 style={{ fontSize: 28, fontWeight: 700, letterSpacing: '-0.01em', margin: 0 }}>{building.address}</h1>
@@ -157,7 +137,6 @@ export default async function BuildingPage({ params }: { params: Promise<{ id: s
           </p>
         </div>
 
-        {/* Quick stats */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.75rem', marginBottom: '2rem' }}>
           <MiniStat label="Diverted YTD" value={`${ytdTonnes}`} unit="t" />
           <MiniStat label="Scope 3 avoided" value={fmt(ytdCo2e)} unit="kgCO₂e" />
@@ -165,20 +144,20 @@ export default async function BuildingPage({ params }: { params: Promise<{ id: s
           <MiniStat label="In-building matches" value={`${inBuildingMatches.length}`} unit="components" highlight />
         </div>
 
-        {/* Two-column: tower + magic moment */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '1.5rem' }}>
 
-          {/* Building cross-section */}
           <div>
             <h2 style={{ fontSize: 14, fontWeight: 600, margin: '0 0 1rem 0' }}>Building cross-section</h2>
+            <p style={{ fontSize: 11, color: '#6B6B6B', margin: '0 0 12px 0' }}>Click any floor to open materials passport</p>
             <div style={{ background: '#FAFAFA', padding: 8, borderRadius: 12, border: '1px solid #E8E8E8' }}>
               {floors.map(f => {
                 const fStyle = getFloorStyle(f.status)
                 const tenancy = tenancies.find(t => t.floor_id === f.id && (t.status === 'active' || t.status === 'vacating' || t.status === 'incoming'))
                 const tenantName = tenancy?.tenant_name || (f.status === 'awaiting_tenant' ? '— vacant —' : (f.status === 'amenity' ? (f.floor_number === 0 ? 'Lobby + retail' : 'Roof terrace') : '—'))
                 return (
-                  <div
+                  <Link
                     key={f.id}
+                    href={`/floors/${f.id}`}
                     style={{
                       ...fStyle,
                       padding: '0 10px',
@@ -188,18 +167,19 @@ export default async function BuildingPage({ params }: { params: Promise<{ id: s
                       fontSize: 11,
                       borderRadius: 4,
                       marginBottom: 2,
+                      textDecoration: 'none',
+                      cursor: 'pointer',
                     }}
                   >
                     <span style={{ width: 22, fontWeight: 600, fontVariantNumeric: 'tabular-nums', fontSize: 10 }}>{f.floor_label}</span>
                     <span style={{ flex: 1, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: 8 }}>{tenantName}</span>
                     <span style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{STATUS_LABEL[f.status] || f.status}</span>
-                  </div>
+                  </Link>
                 )
               })}
               <div style={{ height: 14, background: '#1A1A1A', borderRadius: '0 0 4px 4px', marginTop: 4, opacity: 0.8 }}></div>
             </div>
 
-            {/* Legend */}
             <div style={{ marginTop: 16, fontSize: 11 }}>
               <p style={{ fontSize: 10, color: '#6B6B6B', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, marginBottom: 8 }}>Legend</p>
               <LegendRow color="#C9531C" label="Disassembly in progress" />
@@ -210,10 +190,8 @@ export default async function BuildingPage({ params }: { params: Promise<{ id: s
             </div>
           </div>
 
-          {/* Right column */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-            {/* Active intervention header */}
             {activeFloor && activeTenancy && (
               <div style={{ background: '#fff', border: '1px solid #E8E8E8', borderRadius: 12, padding: '1.5rem' }}>
                 <div style={{ display: 'flex', gap: 16 }}>
@@ -232,7 +210,6 @@ export default async function BuildingPage({ params }: { params: Promise<{ id: s
               </div>
             )}
 
-            {/* THE MAGIC MOMENT */}
             {activeFloorMatches.length > 0 && destinationTenancy && destinationFloor && (
               <div style={{ background: '#FBEDE4', border: '1px solid #C9531C', borderRadius: 12, padding: '1.5rem' }}>
                 <p style={{ fontSize: 10, color: '#C9531C', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700, margin: 0, marginBottom: 8 }}>In-building reuse · The magic moment</p>
@@ -250,10 +227,14 @@ export default async function BuildingPage({ params }: { params: Promise<{ id: s
               </div>
             )}
 
-            {/* Components catalogued */}
             {activeFloorComponents.length > 0 && (
               <div style={{ background: '#fff', border: '1px solid #E8E8E8', borderRadius: 12, padding: '1.25rem' }}>
-                <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0, marginBottom: 4 }}>Components catalogued</h3>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+                  <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>Components catalogued</h3>
+                  <Link href={`/floors/${activeFloor!.id}`} style={{ fontSize: 11, color: '#C9531C', fontWeight: 600, textDecoration: 'none' }}>
+                    View full materials passport →
+                  </Link>
+                </div>
                 <p style={{ fontSize: 11, color: '#6B6B6B', margin: 0, marginBottom: 16 }}>A/B/C grading per DIN SPEC 91484</p>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
                   <GradeStat number={activeFloorComponents.length} label="Total" />
@@ -274,9 +255,8 @@ export default async function BuildingPage({ params }: { params: Promise<{ id: s
           </div>
         </div>
 
-        {/* Footer */}
         <div style={{ marginTop: '3rem', paddingTop: '1.5rem', borderTop: '1px solid #E8E8E8', display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#9CA0A8' }}>
-          <span>Floorprint · Live data · v0.3</span>
+          <span>Floorprint · Live data · v0.7</span>
           <span>EN 15978 · ESRS E1 · DIN SPEC 91484</span>
         </div>
       </div>
